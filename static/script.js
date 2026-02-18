@@ -622,6 +622,7 @@ function updateTimeFilter(type) {
         case 1:      period = '1d';  break;
         case 7:      period = '5d';  break;
         case 30:     period = '1mo'; break;
+        case 'ytd':  period = 'ytd'; break;
         case 365:    period = '1y';  break;
         case 'all':  period = 'max'; break;
         default:     period = 'max';

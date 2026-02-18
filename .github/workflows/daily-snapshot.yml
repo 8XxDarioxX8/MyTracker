@@ -1,0 +1,18 @@
+name: Daily Portfolio Snapshot
+
+on:
+  schedule:
+    # Läuft jeden Tag um 20:00 Uhr (UTC = 21:00 Schweizer Zeit im Winter, 22:00 im Sommer)
+    - cron: '0 20 * * *'
+  workflow_dispatch:  # Erlaubt manuelles Triggern
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Trigger Snapshot
+      run: |
+        # Ruft deine Render-App auf und triggert den Snapshot
+        curl -X POST https://${{ secrets.RENDER_APP_URL }}/api/snapshot/save
+        echo "✅ Daily snapshot triggered!"

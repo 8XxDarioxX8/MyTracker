@@ -3,7 +3,7 @@ from flask_cors import CORS
 import yfinance as yf
 import sqlite3
 import os
-from datetime import datetime
+from datetime import datetime, date
 
 # Static folder zeigt auf 'static' Unterordner
 app = Flask(__name__, static_folder='static')
@@ -21,15 +21,30 @@ def get_db_connection():
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    
+    # Portfolio Tabelle
     c.execute('''CREATE TABLE IF NOT EXISTS portfolio
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,
                   name TEXT, isin TEXT, amount REAL, priceUSD REAL,
                   rate REAL, date TEXT, totalCHF REAL, ticker TEXT)''')
+    
+    # Cash Tabelle
     c.execute('''CREATE TABLE IF NOT EXISTS cash
                  (id INTEGER PRIMARY KEY, balance REAL)''')
     c.execute('SELECT * FROM cash WHERE id = 1')
     if not c.fetchone():
         c.execute('INSERT INTO cash (id, balance) VALUES (1, 0)')
+    
+    # NEU: Daily Snapshots Tabelle für historische Daten
+    c.execute('''CREATE TABLE IF NOT EXISTS daily_snapshots
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  date TEXT UNIQUE,
+                  total_value_chf REAL,
+                  total_invested_chf REAL,
+                  cash_balance REAL,
+                  portfolio_value_chf REAL,
+                  timestamp TEXT)''')
+    
     conn.commit()
     conn.close()
 
@@ -87,6 +102,10 @@ def add_portfolio():
     conn.commit()
     new_id = c.lastrowid
     conn.close()
+    
+    # Nach jedem neuen Kauf: Snapshot speichern
+    save_daily_snapshot()
+    
     return jsonify({'id': new_id, 'success': True})
 
 @app.route('/api/portfolio/<int:portfolio_id>', methods=['DELETE'])
@@ -95,6 +114,10 @@ def delete_portfolio(portfolio_id):
     conn.execute('DELETE FROM portfolio WHERE id = ?', (portfolio_id,))
     conn.commit()
     conn.close()
+    
+    # Nach Löschen: Snapshot aktualisieren
+    save_daily_snapshot()
+    
     return jsonify({'success': True})
 
 @app.route('/api/portfolio/<int:portfolio_id>', methods=['PUT'])
@@ -108,6 +131,10 @@ def update_portfolio(portfolio_id):
                   data['rate'], data['date'], data['totalCHF'], data['ticker'], portfolio_id))
     conn.commit()
     conn.close()
+    
+    # Nach Update: Snapshot aktualisieren
+    save_daily_snapshot()
+    
     return jsonify({'success': True})
 
 @app.route('/api/cash', methods=['GET'])
@@ -124,7 +151,66 @@ def set_cash():
     conn.execute('UPDATE cash SET balance = ? WHERE id = 1', (data['balance'],))
     conn.commit()
     conn.close()
+    
+    # Nach Cash-Änderung: Snapshot speichern
+    save_daily_snapshot()
+    
     return jsonify({'success': True})
+
+# NEU: Daily Snapshots API
+@app.route('/api/snapshots', methods=['GET'])
+def get_snapshots():
+    """Gibt alle gespeicherten Daily Snapshots zurück"""
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM daily_snapshots ORDER BY date ASC').fetchall()
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
+@app.route('/api/snapshot/save', methods=['POST'])
+def trigger_snapshot():
+    """Manuell einen Snapshot speichern"""
+    save_daily_snapshot()
+    return jsonify({'success': True, 'message': 'Snapshot gespeichert'})
+
+def save_daily_snapshot():
+    """
+    Speichert den aktuellen Portfolio-Wert als Daily Snapshot.
+    Wird automatisch bei jeder Änderung aufgerufen.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        
+        # Portfolio-Wert berechnen
+        portfolio_rows = c.execute('SELECT * FROM portfolio').fetchall()
+        total_invested = sum(row[7] for row in portfolio_rows)  # totalCHF
+        
+        # Cash holen
+        cash_row = c.execute('SELECT balance FROM cash WHERE id = 1').fetchone()
+        cash_balance = cash_row[0] if cash_row else 0
+        
+        # Aktueller Marktwert (vereinfacht - du kannst das später mit Live-Preisen erweitern)
+        portfolio_value = total_invested  # Später: mit aktuellen Kursen berechnen
+        
+        total_value = portfolio_value + cash_balance
+        
+        # Heutiges Datum
+        today = date.today().isoformat()
+        timestamp = datetime.now().isoformat()
+        
+        # Snapshot speichern (oder updaten wenn heute schon existiert)
+        c.execute('''INSERT OR REPLACE INTO daily_snapshots 
+                     (date, total_value_chf, total_invested_chf, cash_balance, portfolio_value_chf, timestamp)
+                     VALUES (?, ?, ?, ?, ?, ?)''',
+                  (today, total_value, total_invested, cash_balance, portfolio_value, timestamp))
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"✅ Snapshot gespeichert für {today}: {total_value:.2f} CHF")
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Snapshot speichern: {e}")
 
 # --- STATISCHE DATEIEN ---
 
