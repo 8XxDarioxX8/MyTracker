@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mein Portfolio Tracker</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+    <div class="app-container">
+        <nav class="sidebar">
+            <div class="logo">MyTracker</div>
+            <ul>
+                <li onclick="showPage('page-dashboard')" id="nav-dashboard" class="active">Dashboard</li>
+                <li onclick="showPage('page-investments')" id="nav-investments">Investments</li>
+                <li onclick="showPage('page-analysis')" id="nav-analysis">Analyse</li>
+            </ul>
+            <div class="user-profile">Dario</div>
+        </nav>
+
+        <main class="main-content">
+            <section id="page-dashboard">
+                <header class="dashboard-header">
+                    <div>
+                        <h1 id="greeting">Guten Abend, Dario</h1>
+                        <p>Dein Vermögen im Überblick</p>
+                    </div>
+                </header>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                    <div class="card chart-card">
+                        <h3>Aktuelle Verteilung</h3>
+                        <div class="chart-container" style="position: relative; height:300px;">
+                            <canvas id="portfolioChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="card chart-card">
+                        <div id="performance-display" style="height: 100%;">
+                            <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #999;">
+                                <p>Lade Performance-Daten...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card chart-card">
+                    <div class="chart-header">
+                        <h3>Vermögensverlauf</h3>
+                        <div class="time-filters">
+                            <button onclick="updateTimeFilter(1)">1T</button>
+                            <button onclick="updateTimeFilter(7)">1W</button>
+                            <button onclick="updateTimeFilter(30)">1M</button>
+                            <button onclick="updateTimeFilter(365)">1J</button>
+                            <button class="active" onclick="updateTimeFilter('all')">All</button>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="position: relative; height:350px;">
+                        <canvas id="lineChart"></canvas>
+                    </div>
+                </div>
+            </section> 
+            
+            <section id="page-analysis" style="display:none;">
+                <header class="dashboard-header">
+                    <div>
+                        <h1>Analyse</h1>
+                        <p>Monatsrenditen im Überblick</p>
+                    </div>
+                </header>
+                <div id="heatmap-container"></div>
+            </section>
+
+            <section id="page-investments" style="display: none;">
+                <header>
+                    <h1>Deine Investments</h1>
+                </header>
+                <div class="investment-stats">
+                    <div class="mini-card">
+                        <h4>Gesamt</h4>
+                        <div class="val"><span id="inv-total-all">0</span> CHF</div>
+                    </div>
+                    <div class="mini-card">
+                        <h4>Aktien</h4>
+                        <div class="val"><span id="inv-total-stocks">0</span> CHF</div>
+                    </div>
+                    <div class="mini-card highlight-cash" onclick="editCash()" style="cursor:pointer;">
+                        <h4>CASH</h4>
+                        <div class="val"><span id="inv-total-cash">0</span> CHF</div>
+                    </div>
+                </div>
+                <div class="positions-container">
+                    <h3>Positionen</h3>
+                    <div id="positions-list"></div>
+                </div>
+            </section>
+        </main>
+
+        <button id="fab-add" onclick="toggleModal(true)">+</button>
+
+        <div id="transaction-modal" class="modal">
+            <div class="modal-content">
+                <span class="close" onclick="toggleModal(false)">&times;</span>
+                <h2>Neue Transaktion</h2>
+                <div class="input-group">
+                    <input type="text" id="asset-name" placeholder="Name (z.B. Apple)">
+                    <input type="text" id="isin" placeholder="ISIN (z.B. US0378331005)">
+                </div>
+                <div class="input-group">
+                    <input type="number" id="amount" placeholder="Anzahl" step="any">
+                    <input type="number" id="price" placeholder="Preis in USD" step="any">
+                    <input type="number" id="exchange-rate" placeholder="Wechselkurs (USD/CHF)" step="any">
+                </div>
+                <div class="input-group">
+                    <label for="purchase-date" style="display:block; font-size:12px; margin-bottom:5px;">Kaufdatum</label>
+                    <input type="date" id="purchase-date">
+                </div>
+                <div class="input-group">
+                    <input type="number" id="fee-commission" placeholder="Kommission (CHF)" step="any">
+                    <input type="number" id="fee-stempel" placeholder="Stempelgebühr (CHF)" step="any">
+                </div>
+                <button class="save-btn" onclick="calculate()">Transaktion speichern</button>
+            </div>
+        </div>
+    </div> 
+
+    <script src="script.js"></script>
+</body>
+</html>
