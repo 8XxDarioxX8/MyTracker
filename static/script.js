@@ -757,3 +757,34 @@ async function editSpecificBuy(dbId) {
         alert("Fehler beim Aktualisieren!");
     }
 }
+// Mobile Menu Toggle
+function toggleMobileMenu() {
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.toggle('mobile-open');
+    }
+}
+
+// Sidebar schließen wenn man auf einen Link klickt (Mobile)
+document.querySelectorAll('.sidebar li').forEach(item => {
+    item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.remove('mobile-open');
+            }
+        }
+    });
+});
+
+// Sidebar schließen wenn man außerhalb klickt (Mobile)
+document.addEventListener('click', (e) => {
+    if (window.innerWidth <= 768) {
+        const sidebar = document.getElementById('sidebar');
+        const menuToggle = document.querySelector('.menu-toggle');
+        
+        if (sidebar && !sidebar.contains(e.target) && !menuToggle.contains(e.target)) {
+            sidebar.classList.remove('mobile-open');
+        }
+    }
+});
