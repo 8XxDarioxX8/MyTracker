@@ -45,6 +45,15 @@ def init_db():
                   portfolio_value_chf REAL,
                   timestamp TEXT)''')
     
+    # NEU: Price Snapshots Tabelle für historische Kurse
+    c.execute('''CREATE TABLE IF NOT EXISTS price_snapshots
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  date TEXT NOT NULL,
+                  ticker TEXT NOT NULL,
+                  close_price REAL NOT NULL,
+                  timestamp TEXT,
+                  UNIQUE(date, ticker))''')
+    
     conn.commit()
     conn.close()
 
@@ -166,6 +175,29 @@ def get_snapshots():
     conn.close()
     return jsonify([dict(row) for row in rows])
 
+@app.route('/api/price_snapshots', methods=['GET'])
+def get_price_snapshots():
+    """Gibt alle gespeicherten Kurse zurück"""
+    date_param = request.args.get('date')  # Optional: Filter nach Datum
+    ticker_param = request.args.get('ticker')  # Optional: Filter nach Ticker
+    
+    conn = get_db_connection()
+    
+    if date_param and ticker_param:
+        rows = conn.execute('SELECT * FROM price_snapshots WHERE date = ? AND ticker = ?', 
+                           (date_param, ticker_param)).fetchall()
+    elif date_param:
+        rows = conn.execute('SELECT * FROM price_snapshots WHERE date = ? ORDER BY ticker', 
+                           (date_param,)).fetchall()
+    elif ticker_param:
+        rows = conn.execute('SELECT * FROM price_snapshots WHERE ticker = ? ORDER BY date', 
+                           (ticker_param,)).fetchall()
+    else:
+        rows = conn.execute('SELECT * FROM price_snapshots ORDER BY date DESC, ticker').fetchall()
+    
+    conn.close()
+    return jsonify([dict(row) for row in rows])
+
 @app.route('/api/snapshot/save', methods=['POST'])
 def trigger_snapshot():
     """Manuell einen Snapshot speichern"""
@@ -174,31 +206,86 @@ def trigger_snapshot():
 
 def save_daily_snapshot():
     """
-    Speichert den aktuellen Portfolio-Wert als Daily Snapshot.
-    Wird automatisch bei jeder Änderung aufgerufen.
+    Speichert den aktuellen Portfolio-Wert UND die Kurse als Daily Snapshot.
+    
+    1. Lädt aktuelle Kurse von yfinance
+    2. Speichert Kurse in price_snapshots Tabelle
+    3. Berechnet Portfolio-Wert mit aktuellen Kursen
+    4. Speichert Portfolio-Snapshot in daily_snapshots Tabelle
     """
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         
-        # Portfolio-Wert berechnen
+        # Portfolio-Items holen
         portfolio_rows = c.execute('SELECT * FROM portfolio').fetchall()
-        total_invested = sum(row[7] for row in portfolio_rows)  # totalCHF
+        
+        if not portfolio_rows:
+            conn.close()
+            print("⚠️ Kein Portfolio vorhanden - Snapshot übersprungen")
+            return
+        
+        # Alle benötigten Tickers sammeln
+        tickers = set()
+        for row in portfolio_rows:
+            ticker = row[8]  # ticker ist an Index 8
+            if ticker:
+                tickers.add(ticker)
+        tickers.add("USDCHF=X")  # FX immer dabei
+        
+        today = date.today().isoformat()
+        timestamp = datetime.now().isoformat()
+        
+        print(f"📊 Erstelle Snapshot für {today}...")
+        
+        # Schritt 1: Aktuelle Kurse von yfinance holen und speichern
+        prices = {}
+        for ticker in tickers:
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period='1d')
+                
+                if not hist.empty:
+                    close_price = float(hist['Close'].iloc[-1])
+                    prices[ticker] = close_price
+                    
+                    # Kurs in price_snapshots speichern
+                    c.execute('''INSERT OR REPLACE INTO price_snapshots 
+                                 (date, ticker, close_price, timestamp)
+                                 VALUES (?, ?, ?, ?)''',
+                              (today, ticker, close_price, timestamp))
+                    
+                    print(f"  ✓ {ticker}: {close_price:.4f}")
+                else:
+                    print(f"  ⚠️ {ticker}: Keine Daten (Wochenende/Feiertag?)")
+            except Exception as e:
+                print(f"  ✗ {ticker}: Fehler - {e}")
+        
+        # Schritt 2: Portfolio-Wert berechnen
+        total_invested = 0
+        portfolio_value = 0
+        
+        fx_rate = prices.get("USDCHF=X")
+        
+        for row in portfolio_rows:
+            item_id, name, isin, amount, priceUSD, rate, purch_date, totalCHF, ticker = row
+            total_invested += totalCHF
+            
+            # Aktuellen Marktwert berechnen
+            if ticker in prices and fx_rate:
+                current_price_usd = prices[ticker]
+                portfolio_value += amount * current_price_usd * fx_rate
+            else:
+                # Fallback: Kaufpreis wenn kein aktueller Kurs
+                portfolio_value += totalCHF
         
         # Cash holen
         cash_row = c.execute('SELECT balance FROM cash WHERE id = 1').fetchone()
         cash_balance = cash_row[0] if cash_row else 0
         
-        # Aktueller Marktwert (vereinfacht - du kannst das später mit Live-Preisen erweitern)
-        portfolio_value = total_invested  # Später: mit aktuellen Kursen berechnen
-        
         total_value = portfolio_value + cash_balance
         
-        # Heutiges Datum
-        today = date.today().isoformat()
-        timestamp = datetime.now().isoformat()
-        
-        # Snapshot speichern (oder updaten wenn heute schon existiert)
+        # Schritt 3: Portfolio-Snapshot speichern
         c.execute('''INSERT OR REPLACE INTO daily_snapshots 
                      (date, total_value_chf, total_invested_chf, cash_balance, portfolio_value_chf, timestamp)
                      VALUES (?, ?, ?, ?, ?, ?)''',
@@ -207,7 +294,12 @@ def save_daily_snapshot():
         conn.commit()
         conn.close()
         
-        print(f"✅ Snapshot gespeichert für {today}: {total_value:.2f} CHF")
+        print(f"✅ Snapshot gespeichert: {total_value:.2f} CHF")
+        
+    except Exception as e:
+        print(f"❌ Fehler beim Snapshot speichern: {e}")
+        import traceback
+        traceback.print_exc()
         
     except Exception as e:
         print(f"❌ Fehler beim Snapshot speichern: {e}")
