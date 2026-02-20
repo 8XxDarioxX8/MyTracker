@@ -300,9 +300,6 @@ def save_daily_snapshot():
         print(f"❌ Fehler beim Snapshot speichern: {e}")
         import traceback
         traceback.print_exc()
-        
-    except Exception as e:
-        print(f"❌ Fehler beim Snapshot speichern: {e}")
 
 # --- STATISCHE DATEIEN ---
 
